@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>メモアプリ</title>
+    <style>
+        :root { --sidebar-width: 260px; --primary-color: #5d87ff; --bg-color: #f0f2f5; }
+        body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", sans-serif; background: var(--bg-color); margin: 0; display: flex; height: 100vh; overflow: hidden; color: #333; }
+
+        /* サイドバー */
+        .sidebar { width: var(--sidebar-width); background: white; padding: 20px; display: flex; flex-direction: column; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 10; }
+        .category-list { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
+        .category-item { padding: 10px 15px; cursor: pointer; border-radius: 10px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; font-weight: 500; }
+        .category-item.active { background: var(--primary-color); color: white; }
+        .category-item.system-folder { border-left: 4px solid var(--primary-color); background: #f8f9ff; }
+        .category-item.system-folder.active { background: var(--primary-color); }
+        .cat-del-btn { opacity: 0.5; cursor: pointer; font-size: 14px; padding: 2px 5px; }
+
+        /* フォルダ追加・バックアップ */
+        .add-cat-group { margin-top: 20px; display: flex; gap: 5px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+        .add-cat-group input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; }
+        .backup-group { margin-top: 15px; padding-top: 10px; }
+        .backup-label { font-size: 11px; color: #888; margin-bottom: 8px; display: block; font-weight: bold; }
+        .btn-backup, .btn-restore { width: 100%; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 5px; border: none; }
+        .btn-backup { background: #6c757d; color: white; }
+        .btn-restore { background: #f8f9fa; border: 1px solid #ddd; }
+
+        /* メイン */
+        .main-content { flex-grow: 1; padding: 40px; overflow-y: auto; scroll-behavior: smooth; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header-top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; gap: 20px; }
+        .search-input { flex-grow: 1; padding: 10px 15px; border: 2px solid #ddd; border-radius: 10px; font-size: 14px; outline: none; }
+        .btn-export-all { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+
+        /* 入力エリア */
+        .input-card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); margin-bottom: 40px; border: 2px solid transparent; transition: 0.3s; }
+        .input-card.editing { border-color: var(--primary-color); background: #fdfdff; }
+        .editor-title { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #eee; border-radius: 10px; font-size: 18px; font-weight: bold; box-sizing: border-box; outline: none; }
+        .editor-body { width: 100%; min-height: 150px; padding: 15px; border: 2px dashed #e0e0e0; border-radius: 10px; background: #fff; line-height: 1.6; outline: none; }
+        .editor-body img { max-width: 100%; border-radius: 8px; margin: 10px 0; display: block; height: auto; }
+        .button-group { display: flex; gap: 10px; margin-top: 15px; }
+        .save-btn { flex-grow: 1; padding: 15px; background: var(--primary-color); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+        .cancel-btn { padding: 15px 25px; background: #eee; color: #666; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; display: none; }
+
+        /* メモ表示 */
+        .memo-item { background: white; padding: 25px; border-radius: 20px; margin-bottom: 25px; border: 1px solid rgba(0,0,0,0.05); position: relative; }
+        .memo-header { font-size: 12px; color: #adb5bd; margin-bottom: 10px; }
+        .memo-title { font-size: 20px; font-weight: bold; margin-bottom: 12px; display: block; color: #2a3547; }
+        .memo-body img { max-width: 100% !important; height: auto !important; border-radius: 10px; margin: 15px 0; display: block; }
+
+        /* 操作ボタン */
+        .actions { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; }
+        .btn-small { border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: bold; }
+        .btn-edit { background: #e0f2fe; color: #0369a1; }
+        .btn-move { background: #eef2ff; color: #4338ca; }
+        .btn-pdf { background: #f0fdf4; color: #166534; }
+        .btn-del { background: #fff5f5; color: #dc2626; }
+
+    @media print {
+        /* サイドバーや入力欄を隠す */
+        .sidebar, .input-card, .actions, .header-top, .add-cat-group, #editorLabel { display: none !important; }
+    
+        body, .main-content { overflow: visible !important; height: auto !important; background: white !important; padding: 0 !important; }
+        .container { max-width: 100% !important; margin: 0 !important; }
+
+        /* 見出しの直後で無理に改ページさせない設定 */
+        h2#currentCategoryTitle { 
+            page-break-after: avoid; 
+            margin-top: 0;
+            padding-bottom: 10px;
+        }
+
+        /* メモ同士がページをまたいでバラバラにならないようにする */
+        .memo-item { 
+            border-bottom: 1px solid #eee !important; 
+            page-break-inside: avoid; /* メモの途中でページが切れるのを防ぐ */
+            border-radius: 0; 
+            box-shadow: none; 
+            margin-bottom: 10px !important;
+            padding: 15px 0 !important;
+        }
+    }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h3>📂 フォルダ</h3>
+    <ul class="category-list" id="categoryList"></ul>
+    
+    <div class="add-cat-group">
+        <input type="text" id="newCatInput" placeholder="新規フォルダ...">
+        <button onclick="addCategory()" style="border:none; background:#28a745; color:white; border-radius:5px; padding:0 10px; cursor:pointer;">＋</button>
+    </div>
+
+    <div class="backup-group">
+        <span class="backup-label">PC本体へバックアップ</span>
+        <button class="btn-backup" onclick="exportDatabase()">全データを保存 (Export)</button>
+        <button class="btn-restore" onclick="document.getElementById('importFile').click()">データを復元 (Import)</button>
+        <input type="file" id="importFile" style="display:none" onchange="importDatabase(event)" accept=".json">
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="container">
+        <div class="header-top">
+            <input type="text" id="searchInput" class="search-input" placeholder="🔍 メモを検索..." oninput="renderMemos()">
+            <button class="btn-export-all" onclick="window.print()">📄 フォルダをPDF保存</button>
+        </div>
+
+        <h2 id="currentCategoryTitle" style="margin-bottom:20px;">📝 まず初めに</h2>
+
+        <div class="input-card" id="inputSection">
+            <h4 id="editorLabel" style="margin:0 0 10px 0; font-size:12px; color:var(--primary-color); display:none;">✨ 編集モード：内容を修正してください</h4>
+            <input type="text" id="titleInput" class="editor-title" placeholder="タイトルを入力">
+            <div id="editor" class="editor-body" contenteditable="true"></div>
+            <div class="button-group">
+                <button class="save-btn" id="saveBtn" onclick="handleSave()">保存する</button>
+                <button class="cancel-btn" id="cancelBtn" onclick="cancelEdit()">キャンセル</button>
+            </div>
+        </div>
+        
+        <ul id="memoList" style="list-style:none; padding:0;"></ul>
+    </div>
+</div>
+
+<script>
+    let db;
+    let editId = null;
+    const SYSTEM_FOLDER = "まず初めに";
+    let currentCategory = SYSTEM_FOLDER;
+    let categories = JSON.parse(localStorage.getItem('myCatsV8')) || ['仕事', '回路', '備忘録'];
+
+    const request = indexedDB.open("InlineMemoDB", 1);
+    request.onupgradeneeded = (e) => {
+        e.target.result.createObjectStore("memos", { keyPath: "id", autoIncrement: true });
+    };
+    request.onsuccess = (e) => {
+        db = e.target.result;
+        checkAndCreateGuide(() => {
+            renderCategories();
+            renderMemos();
+        });
+    };
+
+    function checkAndCreateGuide(callback) {
+        const transaction = db.transaction(["memos"], "readwrite");
+        const store = transaction.objectStore("memos");
+        store.getAll().onsuccess = (e) => {
+            const hasGuide = e.target.result.some(m => m.category === SYSTEM_FOLDER);
+            if (!hasGuide) {
+                const guideData = [
+                    {
+                        title: "📂 データの保管場所について（重要）",
+                        category: SYSTEM_FOLDER,
+                        date: new Date().toLocaleString('ja-JP'),
+                        content: `<div><b>このアプリのデータは「あなたのこのデバイス・このブラウザ」の中だけに保存されます。</b></div>
+                                  <ul>
+                                  <li><b>クラウド非対応:</b> GoogleドライブやiCloudのように外部サーバーへ送信されることは一切ありません。完全にオフライン・ローカルな状態で完結します。</li>
+                                  <li><b>保存の仕組み:</b> ブラウザの「IndexedDB」という隠し保存領域を使用しています。</li>
+                                  <li><b>消滅のリスク:</b> ブラウザの「キャッシュ削除」「履歴の全消去」を行うと、このメモデータも一緒に削除される可能性が高いです。</li>
+                                  <li><b>他デバイスとの同期:</b> PCAで書いたメモをPCBで見ることはできません（バックアップファイルを移す必要があります）。</li>
+                                  </ul>`
+                    },
+                    {
+                        title: "📖 アプリの機能・操作ガイド",
+                        category: SYSTEM_FOLDER,
+                        date: new Date().toLocaleString('ja-JP'),
+                        content: `<ul>
+                                  <li><b>作成:</b> タイトルと本文を入力して保存。画像は枠内へドラッグ＆ドロップ。</li>
+                                  <li><b>編集:</b> メモ右上の「編集」で内容を修正し、「更新」で上書き保存。</li>
+                                  <li><b>検索:</b> 上の検索窓でタイトル・本文からリアルタイム絞り込み。</li>
+                                  <li><b>PDF:</b> 個別またはフォルダ単位で書類として保存。</li>
+                                  <li><b>バックアップ:</b> 左下の「Export」で全データをPC本体へファイルとして保存可能。</li>
+                                  </ul>`
+                    },
+                    {
+                        title: "⚠️ 安全に使うための鉄則",
+                        category: SYSTEM_FOLDER,
+                        date: new Date().toLocaleString('ja-JP'),
+                        content: `<div style="color:#d63031; font-weight:bold;">データ紛失を防ぐための3ヶ条：</div>
+                                  <ol>
+                                  <li><b>週に一度のExport:</b> サイドバーの「全データを保存」を押し、PCのフォルダに保存してください。</li>
+                                  <li><b>重要写真はリサイズ:</b> 巨大な写真は動作を重くします。少し小さくして貼るのがコツです。</li>
+                                  <li><b>シークレットモード禁止:</b> シークレットブラウザで開くと、閉じた瞬間にデータが消去されます。</li>
+                                  </ol>`
+                    }
+                ];
+                guideData.forEach(g => store.add(g));
+                transaction.oncomplete = () => callback();
+            } else { callback(); }
+        };
+    }
+
+    function renderCategories() {
+        const list = document.getElementById('categoryList');
+        list.innerHTML = `<li class="category-item system-folder ${currentCategory === SYSTEM_FOLDER ? 'active' : ''}" onclick="selectCategory('${SYSTEM_FOLDER}')">✨ ${SYSTEM_FOLDER}</li>`;
+        list.innerHTML += `<li class="category-item ${currentCategory === 'すべて' ? 'active' : ''}" onclick="selectCategory('すべて')">すべて</li>`;
+        categories.forEach(cat => {
+            list.innerHTML += `<li class="category-item ${currentCategory === cat ? 'active' : ''}" onclick="selectCategory('${cat}')"><span>${cat}</span><span class="cat-del-btn" onclick="deleteCategory(event, '${cat}')">✕</span></li>`;
+        });
+    }
+
+    function selectCategory(cat) {
+        currentCategory = cat;
+        document.getElementById('currentCategoryTitle').innerText = `📝 ${cat}`;
+        document.getElementById('inputSection').style.display = (cat === SYSTEM_FOLDER) ? 'none' : 'block';
+        cancelEdit();
+        renderCategories();
+        renderMemos();
+    }
+
+    function startEdit(id) {
+        const transaction = db.transaction(["memos"], "readonly");
+        transaction.objectStore("memos").get(id).onsuccess = (e) => {
+            const m = e.target.result;
+            editId = id;
+            document.getElementById('titleInput').value = m.title;
+            document.getElementById('editor').innerHTML = m.content;
+            document.getElementById('saveBtn').innerText = "更新する";
+            document.getElementById('cancelBtn').style.display = "block";
+            document.getElementById('editorLabel').style.display = "block";
+            document.getElementById('inputSection').classList.add('editing');
+            document.querySelector('.main-content').scrollTop = 0;
+        };
+    }
+
+    function cancelEdit() {
+        editId = null;
+        document.getElementById('titleInput').value = '';
+        document.getElementById('editor').innerHTML = '';
+        document.getElementById('saveBtn').innerText = "保存する";
+        document.getElementById('cancelBtn').style.display = "none";
+        document.getElementById('editorLabel').style.display = "none";
+        document.getElementById('inputSection').classList.remove('editing');
+    }
+
+    function handleSave() {
+        const title = document.getElementById('titleInput').value.trim();
+        const content = document.getElementById('editor').innerHTML;
+        if (!title && !content) return;
+        const transaction = db.transaction(["memos"], "readwrite");
+        const store = transaction.objectStore("memos");
+        if (editId) {
+            store.get(editId).onsuccess = (e) => {
+                const data = e.target.result;
+                data.title = title || "無題"; data.content = content;
+                data.date = new Date().toLocaleString('ja-JP') + " (更新)";
+                store.put(data);
+            };
+        } else {
+            store.add({
+                title: title || "無題", content: content,
+                category: (currentCategory === 'すべて' ? '未分類' : currentCategory),
+                date: new Date().toLocaleString('ja-JP')
+            });
+        }
+        transaction.oncomplete = () => { cancelEdit(); renderMemos(); };
+    }
+
+    function renderMemos() {
+        const list = document.getElementById('memoList');
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        list.innerHTML = '';
+        db.transaction(["memos"], "readonly").objectStore("memos").openCursor(null, "prev").onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                const m = cursor.value;
+                if ((currentCategory === 'すべて' || m.category === currentCategory) && 
+                    (m.title.toLowerCase().includes(query) || m.content.toLowerCase().includes(query))) {
+                    const li = document.createElement('li');
+                    li.className = 'memo-item';
+                    li.id = `memo-${m.id}`;
+                    const isSys = (m.category === SYSTEM_FOLDER);
+                    li.innerHTML = `
+                        <div class="memo-header">${m.category} | ${m.date}</div>
+                        <strong class="memo-title">${m.title}</strong>
+                        <div class="memo-body">${m.content}</div>
+                        <div class="actions">
+                            ${!isSys ? `<button class="btn-small btn-edit" onclick="startEdit(${m.id})">編集</button>` : ''}
+                            ${!isSys ? `<button class="btn-small btn-move" onclick="moveMemo(${m.id})">移動</button>` : ''}
+                            <button class="btn-small btn-pdf" onclick="exportSinglePDF(${m.id})">個別PDF</button>
+                            ${!isSys ? `<button class="btn-small btn-del" onclick="deleteMemo(${m.id})">削除</button>` : ''}
+                        </div>`;
+                    list.appendChild(li);
+                }
+                cursor.continue();
+            }
+        };
+    }
+
+    // --- その他補助機能 ---
+    function addCategory() {
+        const val = document.getElementById('newCatInput').value.trim();
+        if (val && !categories.includes(val) && val !== SYSTEM_FOLDER && val !== 'すべて') {
+            categories.push(val);
+            localStorage.setItem('myCatsV8', JSON.stringify(categories));
+            document.getElementById('newCatInput').value = ''; renderCategories();
+        }
+    }
+    function deleteCategory(e, cat) {
+        e.stopPropagation();
+        if(confirm(`フォルダ「${cat}」を削除しますか？`)) {
+            categories = categories.filter(c => c !== cat);
+            localStorage.setItem('myCatsV8', JSON.stringify(categories));
+            if(currentCategory === cat) currentCategory = SYSTEM_FOLDER;
+            renderCategories(); renderMemos();
+        }
+    }
+    function moveMemo(id) {
+        const target = prompt(`移動先フォルダ名：\n${categories.join(', ')}, 未分類`);
+        if (target) {
+            const tx = db.transaction(["memos"], "readwrite");
+            const store = tx.objectStore("memos");
+            store.get(id).onsuccess = (e) => { const d = e.target.result; d.category = target; store.put(d); };
+            tx.oncomplete = () => renderMemos();
+        }
+    }
+    function deleteMemo(id) {
+        if(confirm("削除しますか？")) {
+            const tx = db.transaction(["memos"], "readwrite");
+            tx.objectStore("memos").delete(id); tx.oncomplete = () => renderMemos();
+        }
+    }
+    function exportSinglePDF(id) {
+        const all = document.querySelectorAll('.memo-item');
+        all.forEach(m => { if (m.id !== `memo-${id}`) m.style.display = 'none'; });
+        window.print(); all.forEach(m => m.style.display = 'block');
+    }
+    function exportDatabase() {
+        db.transaction(["memos"], "readonly").objectStore("memos").getAll().onsuccess = (e) => {
+            const blob = new Blob([JSON.stringify({memos: e.target.result, categories})], {type: "application/json"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = `memo_backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+        };
+    }
+    function importDatabase(event) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = JSON.parse(e.target.result);
+            if(confirm("データを全て上書き復元しますか？")) {
+                const tx = db.transaction(["memos"], "readwrite");
+                const store = tx.objectStore("memos");
+                store.clear().onsuccess = () => data.memos.forEach(m => { delete m.id; store.add(m); });
+                tx.oncomplete = () => { 
+                    categories = data.categories; 
+                    localStorage.setItem('myCatsV8', JSON.stringify(categories)); 
+                    location.reload(); 
+                };
+            }
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+    const editor = document.getElementById('editor');
+    editor.addEventListener('dragover', (e) => e.preventDefault());
+    editor.addEventListener('drop', (e) => {
+        e.preventDefault();
+        for (let file of e.dataTransfer.files) {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = document.createElement('img'); img.src = ev.target.result;
+                    const sel = window.getSelection();
+                    if (sel.rangeCount) { sel.getRangeAt(0).insertNode(img); } else { editor.appendChild(img); }
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    });
+</script>
+</body>
+</html>
